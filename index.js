@@ -1,19 +1,56 @@
-const fs = require("fs");
+const TelegramBot = require("node-telegram-bot-api");
 const ytdl = require("@distube/ytdl-core");
 const ffmpeg = require("fluent-ffmpeg");
-const sanitize = require("sanitize-filename"); // Ensure safe filenames
+const fs = require("fs");
+const express = require("express");
+const sanitize = require("sanitize-filename");
 
-async function download4KVideo(videoUrl) {
+const TOKEN = "6065635181:AAG2pNqB9rNsV8VZsCfvIs4poJxeHRzU8qk";
+const bot = new TelegramBot(TOKEN, { polling: true });
+const app = express();
+const PORT = 3001;
+const DOWNLOAD_DIR = "./downloads/";
+const cache = new Map();
+
+if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR);
+
+bot.onText(/\/start/, (msg) => {
+  bot.sendMessage(
+    msg.chat.id,
+    "Send me a YouTube video link, and I will download it in 4K!"
+  );
+});
+
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  if (!text.startsWith("http")) return;
+
+  // Check cache before processing
+  if (cache.has(text)) {
+    const cachedData = cache.get(text);
+    if (!cachedData.sent) {
+      bot.sendMessage(
+        chatId,
+        `Your video is ready: ${cachedData.link}\nSize: ${cachedData.size} MB`
+      );
+      cachedData.sent = true;
+    }
+    return;
+  }
+
+  bot.sendMessage(chatId, "Processing your request...");
+
   try {
-    const info = await ytdl.getInfo(videoUrl);
-    const videoTitle = sanitize(info.videoDetails.title); // Get and sanitize the title
+    const info = await ytdl.getInfo(text);
+    const title = sanitize(info.videoDetails.title);
 
-    // Define output file names
-    const videoPath = `${videoTitle}_video.mp4`;
-    const audioPath = `${videoTitle}_audio.mp3`;
-    const outputFile = `${videoTitle}.mp4`;
+    const videoPath = `${DOWNLOAD_DIR}${title}_video.mp4`;
+    const audioPath = `${DOWNLOAD_DIR}${title}_audio.mp3`;
+    const outputFile = `${DOWNLOAD_DIR}${title}.mp4`;
 
-    // Get the highest quality video & audio
+    // Try fetching formats
     const videoFormat = ytdl.chooseFormat(info.formats, {
       quality: "highestvideo",
     });
@@ -22,48 +59,55 @@ async function download4KVideo(videoUrl) {
     });
 
     if (!videoFormat || !audioFormat) {
-      console.log("No suitable formats found.");
+      bot.sendMessage(chatId, "No suitable video quality found.");
       return;
     }
 
-    console.log(`🎥 Downloading Video: ${videoFormat.qualityLabel}`);
-    console.log(`🎵 Downloading Audio: ${audioFormat.audioBitrate} kbps`);
-
-    // Download video and audio simultaneously
+    // Download video and audio
     await Promise.all([
       new Promise((resolve, reject) => {
-        ytdl(videoUrl, { format: videoFormat })
+        ytdl(text, { format: videoFormat })
           .pipe(fs.createWriteStream(videoPath))
           .on("finish", resolve)
           .on("error", reject);
       }),
       new Promise((resolve, reject) => {
-        ytdl(videoUrl, { format: audioFormat })
+        ytdl(text, { format: audioFormat })
           .pipe(fs.createWriteStream(audioPath))
           .on("finish", resolve)
           .on("error", reject);
       }),
     ]);
 
-    console.log("✅ Video and audio downloaded. Merging...");
+    bot.sendMessage(chatId, "Merging video and audio...");
 
-    // Merge video + audio using FFmpeg
     ffmpeg()
       .input(videoPath)
       .input(audioPath)
       .outputOptions(["-c:v copy", "-c:a aac", "-strict experimental"])
       .save(outputFile)
       .on("end", () => {
-        console.log(`🎉 Merging complete! Saved as: ${outputFile}`);
         fs.unlinkSync(videoPath);
         fs.unlinkSync(audioPath);
-      })
-      .on("error", (err) => console.error("❌ FFmpeg Error:", err));
-  } catch (error) {
-    console.error("❌ Error:", error);
-  }
-}
+        const fileSize = (fs.statSync(outputFile).size / (1024 * 1024)).toFixed(
+          2
+        );
+        const encodedTitle = encodeURIComponent(title);
+        const downloadLink = `http://85.209.2.38:${PORT}/downloads/${encodedTitle}.mp4`;
 
-// Example usage
-const videoUrl = "https://youtu.be/B7-BunbsXu8"; // Replace with actual video URL
-download4KVideo(videoUrl);
+        bot.sendMessage(
+          chatId,
+          `Your video is ready: ${downloadLink}\nSize: ${fileSize} MB`
+        );
+        cache.set(text, { link: downloadLink, size: fileSize, sent: false });
+      })
+      .on("error", (err) =>
+        bot.sendMessage(chatId, `FFmpeg Error: ${err.message}`)
+      );
+  } catch (error) {
+    bot.sendMessage(chatId, `Error processing video: ${error.message}`);
+  }
+});
+
+app.use("/downloads", express.static(DOWNLOAD_DIR));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
