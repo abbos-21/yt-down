@@ -9,7 +9,7 @@ const { exec } = require("child_process");
 const TOKEN = "6065635181:AAG2pNqB9rNsV8VZsCfvIs4poJxeHRzU8qk";
 const bot = new TelegramBot(TOKEN, { polling: true });
 const app = express();
-const PORT = 3000;
+const PORT = 3001;
 const DOWNLOAD_DIR = "./downloads/";
 const cache = new Map();
 
@@ -37,7 +37,7 @@ bot.on("message", async (msg) => {
 
   try {
     const info = await ytdl.getInfo(text);
-    const title = encodeURIComponent(sanitize(info.videoDetails.title));
+    const title = sanitize(info.videoDetails.title);
 
     const videoPath = `${DOWNLOAD_DIR}${title}_video.mp4`;
     const audioPath = `${DOWNLOAD_DIR}${title}_audio.mp3`;
@@ -83,7 +83,8 @@ bot.on("message", async (msg) => {
         const fileSize = (fs.statSync(outputFile).size / (1024 * 1024)).toFixed(
           2
         );
-        const downloadLink = `http://yourserver.com/downloads/${title}.mp4`;
+        const encodedTitle = encodeURIComponent(title);
+        const downloadLink = `http://85.209.2.38:${PORT}/downloads/${encodedTitle}.mp4`;
         bot.sendMessage(
           chatId,
           `Your video is ready: ${downloadLink}
