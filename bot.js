@@ -6,7 +6,7 @@ const express = require("express");
 const sanitize = require("sanitize-filename");
 const path = require("path");
 
-const TOKEN = "YOUR_TELEGRAM_BOT_TOKEN";
+const TOKEN = "6065635181:AAG2pNqB9rNsV8VZsCfvIs4poJxeHRzU8qk";
 const bot = new TelegramBot(TOKEN, { polling: true });
 const app = express();
 const PORT = 3001;
@@ -76,7 +76,7 @@ bot.on("message", async (msg) => {
         const fileSize = (fs.statSync(outputFile).size / (1024 * 1024)).toFixed(
           2
         );
-        const downloadLink = `http://your-server-ip:${PORT}/downloads/${encodeURIComponent(
+        const downloadLink = `http://85.209.2.38:${PORT}/downloads/${encodeURIComponent(
           title
         )}.mp4`;
 
